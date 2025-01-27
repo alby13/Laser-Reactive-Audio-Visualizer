@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: black;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+        .start-button {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 15px 30px;
+            font-size: 18px;
+            background: rgba(0, 255, 200, 0.2);
+            border: 2px solid #0ff;
+            color: #0ff;
+            cursor: pointer;
+            border-radius: 5px;
+            font-family: Arial, sans-serif;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+            transition: all 0.3s ease;
+        }
+        .start-button:hover {
+            background: rgba(0, 255, 200, 0.4);
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <canvas id="visualizer"></canvas>
+    <button class="start-button">Start Visualizer</button>
+
+    <script>
+        const canvas = document.querySelector('canvas');
+        const ctx = canvas.getContext('2d');
+        let audioContext;
+        let analyser;
+        let dataArray;
+        let lasers = [];
+        let particles = [];
+        let time = 0;
+        let isFullscreen = false;
+
+        class Laser {
+            constructor(angle, speed, length, color) {
+                this.origin = { x: canvas.width / 2, y: canvas.height };
+                this.angle = angle;
+                this.speed = speed;
+                this.length = length;
+                this.color = color;
+                this.opacity = 1;
+                this.width = 2 + Math.random() * 3;
+            }
+
+            update(audioData) {
+                const audioIndex = Math.floor(Math.abs(this.angle * 10)) % audioData.length;
+                const audioValue = audioData[audioIndex] / 255;
+
+                this.opacity = audioValue;
+                this.length = 300 + audioValue * 1000;
+                this.angle += this.speed * 0.01 * (Math.random() * 2 - 1);
+            }
+
+            draw(ctx) {
+                ctx.strokeStyle = `hsla(${this.color}, 100%, 50%, ${this.opacity})`;
+                ctx.shadowColor = `hsla(${this.color}, 100%, 70%, ${this.opacity})`;
+                ctx.shadowBlur = 10;
+                ctx.lineWidth = this.width;
+
+                ctx.beginPath();
+                ctx.moveTo(this.origin.x, this.origin.y);
+                ctx.lineTo(
+                    this.origin.x + Math.sin(this.angle) * this.length,
+                    this.origin.y - Math.cos(this.angle) * this.length
+                );
+                ctx.stroke();
+            }
+        }
+
+        class Particle {
+            constructor(x, y, angle, speed, size) {
+                this.x = x;
+                this.y = y;
+                this.angle = angle;
+                this.speed = speed;
+                this.size = size;
+                this.color = Math.random() * 120 + 180; // Generate color between 180 and 300 (blue and green range)
+                this.opacity = 1;
+            }
+
+            update(audioValue) {
+                this.x += Math.sin(this.angle) * this.speed;
+                this.y -= Math.cos(this.angle) * this.speed;
+                this.size *= 0.95;
+                this.opacity *= 0.95;
+                this.speed += audioValue * 0.5;
+            }
+
+            draw(ctx) {
+                ctx.fillStyle = `hsla(${this.color}, 100%, 70%, ${this.opacity})`;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            lasers.forEach(laser => {
+                laser.origin.x = canvas.width / 2;
+                laser.origin.y = canvas.height; // Adjust origin after resizing
+            });
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        document.addEventListener('keypress', (e) => {
+            if (e.key.toLowerCase() === 'f') {
+                toggleFullscreen();
+            }
+        });
+
+        async function toggleFullscreen() {
+            if (!isFullscreen) {
+                await document.documentElement.requestFullscreen();
+                isFullscreen = true;
+            } else {
+                await document.exitFullscreen();
+                isFullscreen = false;
+            }
+        }
+
+        function initializeLasers() {
+            lasers = [];
+            const numLasers = 24;
+            for (let i = 0; i < numLasers; i++) {
+                const angle = (i / numLasers) * Math.PI * 2 - Math.PI;
+                const speed = 0.5 + Math.random();
+                const length = 400 + Math.random() * 200;
+                const color = 160 + Math.random() * 60;
+                lasers.push(new Laser(angle, speed, length, color));
+            }
+        }
+
+        function animateParticles(audioData) {
+            const maxParticles = 300;
+            for (let i = 0; i < audioData.length; i += 100) {
+                const audioValue = audioData[i] / 255;
+                if (audioValue > 0.5 && particles.length < maxParticles) {
+                    const particle = new Particle(
+                        canvas.width / 2,
+                        canvas.height,
+                        Math.random() * Math.PI * 2,
+                        2 + Math.random() * 3,
+                        2 + Math.random() * 5,
+                        Math.random() * 360
+                    );
+                    particles.push(particle);
+                }
+            }
+
+            particles.forEach((particle, index) => {
+                const audioValue = audioData[Math.floor(Math.random() * audioData.length)] / 255;
+                particle.update(audioValue);
+                particle.draw(ctx);
+
+                if (particle.opacity < 0.001 || particle.size < 0.01) {
+                    particles.splice(index, 1);
+                }
+            });
+        }
+
+        document.querySelector('.start-button').addEventListener('click', async () => {
+            document.querySelector('.start-button').style.display = 'none';
+            audioContext = new AudioContext();
+            analyser = audioContext.createAnalyser();
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const source = audioContext.createMediaStreamSource(stream);
+                source.connect(analyser);
+
+                analyser.fftSize = 256;
+                const bufferLength = analyser.frequencyBinCount;
+                dataArray = new Uint8Array(bufferLength);
+
+                initializeLasers();
+                animate();
+            } catch (err) {
+                console.error('Error accessing microphone:', err);
+            }
+        });
+
+        function animate() {
+            requestAnimationFrame(animate);
+            time++;
+
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            analyser.getByteFrequencyData(dataArray);
+
+            lasers.forEach(laser => {
+                laser.update(dataArray);
+                laser.draw(ctx);
+            });
+
+            animateParticles(dataArray);
+        }
+    </script>
+</body>
+</html>

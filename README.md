@@ -1,6 +1,9 @@
 # Laser Reactive HTML5 Audio Visualizer
 I wanted some laser reactive audio visuals for my new song release, so I put together this code. You can press "F" for fullscreen. I think there is a bug with fullscreen when the program runs long, but it was good enough for me to record with.
 
+Demonstration:
+https://www.youtube.com/watch?v=SoJsc4aO8r8
+
 ## License
 This program is for your personal use only. 
 
